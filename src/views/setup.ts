@@ -1,18 +1,56 @@
 import {
-  DEFAULT_LIMIT,
+  DEFAULT_RULES,
+  type EndMode,
   LIMITS,
+  LIMIT_RANGE,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  ROUNDS_RANGE,
+  ROUND_COUNTS,
+  type Rules,
   createGame,
   normalizeName,
+  parseRuleValue,
   validateNewPlayer,
 } from '../game';
 import { upsertGame } from '../storage';
 import { esc, navigate, saveWarning } from '../ui';
 
+/** Ce qui change d'un mode de fin à l'autre dans le formulaire. */
+const MODES: Record<
+  EndMode,
+  {
+    label: string;
+    hint: string;
+    presets: number[];
+    range: { min: number; max: number };
+    unit: string;
+    key: 'limit' | 'maxRounds';
+  }
+> = {
+  points: {
+    label: 'Aux points',
+    hint: "Dès qu'un joueur atteint ce total, la partie s'arrête.",
+    presets: LIMITS,
+    range: LIMIT_RANGE,
+    unit: 'points',
+    key: 'limit',
+  },
+  rounds: {
+    label: 'En manches',
+    hint: "Comme sur le carnet : la partie s'arrête après la dernière manche.",
+    presets: ROUND_COUNTS,
+    range: ROUNDS_RANGE,
+    unit: 'manches',
+    key: 'maxRounds',
+  },
+};
+
 export function renderSetup(root: HTMLElement): void {
   const players: string[] = [];
-  let limit = DEFAULT_LIMIT;
+  const rules: Rules = { ...DEFAULT_RULES };
+  // Valeur saisie à la main (« Autre ») pour chaque mode, sinon null.
+  const custom: Record<EndMode, string | null> = { points: null, rounds: null };
 
   root.innerHTML = `
     <main class="page setup">
@@ -32,16 +70,26 @@ export function renderSetup(root: HTMLElement): void {
 
       <fieldset class="limit">
         <legend>Fin de la partie</legend>
-        <p class="limit-hint">Dès qu'un joueur atteint ce total, la partie s'arrête.</p>
-        <div class="segmented" role="radiogroup">
-          ${LIMITS.map(
-            (l) => `
+        <div class="segmented segmented-mode" role="radiogroup" aria-label="Type de fin">
+          ${(Object.keys(MODES) as EndMode[])
+            .map(
+              (m) => `
             <label class="segment">
-              <input type="radio" name="limit" value="${l}" ${l === limit ? 'checked' : ''} />
-              <span>${l}</span>
+              <input type="radio" name="mode" value="${m}" ${m === rules.mode ? 'checked' : ''} />
+              <span>${MODES[m].label}</span>
             </label>`,
-          ).join('')}
+            )
+            .join('')}
         </div>
+        <p class="limit-hint" id="mode-hint"></p>
+        <div class="segmented" id="values" role="radiogroup"></div>
+        <div class="custom" id="custom" hidden>
+          <label for="custom-value" class="sr-only" id="custom-label"></label>
+          <input id="custom-value" class="field field-num" type="text" inputmode="numeric"
+            maxlength="3" autocomplete="off" enterkeyhint="done" />
+          <span class="custom-unit" id="custom-unit"></span>
+        </div>
+        <p id="rule-error" class="error" role="alert"></p>
       </fieldset>
 
       <div class="bottom-bar">
@@ -55,6 +103,58 @@ export function renderSetup(root: HTMLElement): void {
   const error = root.querySelector<HTMLElement>('#error')!;
   const list = root.querySelector<HTMLOListElement>('#players')!;
   const start = root.querySelector<HTMLButtonElement>('#start')!;
+  const modeHint = root.querySelector<HTMLElement>('#mode-hint')!;
+  const values = root.querySelector<HTMLElement>('#values')!;
+  const customBox = root.querySelector<HTMLElement>('#custom')!;
+  const customInput = root.querySelector<HTMLInputElement>('#custom-value')!;
+  const ruleError = root.querySelector<HTMLElement>('#rule-error')!;
+
+  /** Valeur de fin choisie pour le mode courant, ou null si la saisie libre est invalide. */
+  function ruleValue(): number | null {
+    const m = MODES[rules.mode];
+    const raw = custom[rules.mode];
+    return raw === null ? rules[m.key] : parseRuleValue(raw, m.range);
+  }
+
+  function updateStart(): void {
+    const valid = ruleValue() !== null;
+    const m = MODES[rules.mode];
+    ruleError.textContent =
+      valid || custom[rules.mode] === ''
+        ? ''
+        : `Entrez un nombre entre ${m.range.min} et ${m.range.max}.`;
+    const missing = MIN_PLAYERS - players.length;
+    start.disabled = missing > 0 || !valid;
+    start.textContent =
+      missing > 0
+        ? `Ajoutez encore ${missing} joueur${missing > 1 ? 's' : ''}`
+        : !valid
+          ? `Choisissez le nombre de ${m.unit}`
+          : `Commencer la partie à ${players.length}`;
+  }
+
+  function renderRules(): void {
+    const m = MODES[rules.mode];
+    const raw = custom[rules.mode];
+    modeHint.textContent = m.hint;
+    values.setAttribute('aria-label', `Nombre de ${m.unit}`);
+    values.innerHTML = [...m.presets.map(String), 'other']
+      .map((v) => {
+        const checked = v === 'other' ? raw !== null : raw === null && Number(v) === rules[m.key];
+        return `
+        <label class="segment">
+          <input type="radio" name="value" value="${v}" ${checked ? 'checked' : ''} />
+          <span>${v === 'other' ? 'Autre' : v}</span>
+        </label>`;
+      })
+      .join('');
+    customBox.hidden = raw === null;
+    customInput.value = raw ?? '';
+    customInput.placeholder = `${m.range.min} à ${m.range.max}`;
+    root.querySelector('#custom-label')!.textContent = `Nombre de ${m.unit}`;
+    root.querySelector('#custom-unit')!.textContent = m.unit;
+    updateStart();
+  }
 
   function renderList(): void {
     list.hidden = players.length === 0;
@@ -76,12 +176,7 @@ export function renderSetup(root: HTMLElement): void {
     nameInput.disabled = full;
     form.querySelector('button')!.disabled = full;
     nameInput.placeholder = full ? `C'est complet (${MAX_PLAYERS} joueurs)` : 'Prénom';
-    start.disabled = players.length < MIN_PLAYERS;
-    const missing = MIN_PLAYERS - players.length;
-    start.textContent =
-      missing > 0
-        ? `Ajoutez encore ${missing} joueur${missing > 1 ? 's' : ''}`
-        : `Commencer la partie à ${players.length}`;
+    updateStart();
   }
 
   form.addEventListener('submit', (e) => {
@@ -109,21 +204,49 @@ export function renderSetup(root: HTMLElement): void {
     renderList();
   });
 
-  root.querySelectorAll<HTMLInputElement>('input[name="limit"]').forEach((radio) =>
+  root.querySelectorAll<HTMLInputElement>('input[name="mode"]').forEach((radio) =>
     radio.addEventListener('change', () => {
-      limit = Number(radio.value);
+      rules.mode = radio.value as EndMode;
+      renderRules();
     }),
   );
 
+  values.addEventListener('change', (e) => {
+    const radio = e.target as HTMLInputElement;
+    if (radio.value === 'other') {
+      custom[rules.mode] = custom[rules.mode] ?? '';
+      renderRules();
+      customInput.focus();
+    } else {
+      custom[rules.mode] = null;
+      rules[MODES[rules.mode].key] = Number(radio.value);
+      renderRules();
+    }
+  });
+
+  customInput.addEventListener('input', () => {
+    const digits = customInput.value.replace(/\D/g, '');
+    if (digits !== customInput.value) customInput.value = digits;
+    custom[rules.mode] = digits;
+    updateStart();
+  });
+
+  customInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') customInput.blur();
+  });
+
   start.addEventListener('click', () => {
+    const value = ruleValue();
+    if (value === null) return;
     // Un prénom tapé mais pas encore ajouté : on l'ajoute plutôt que de le perdre.
     if (nameInput.value.trim() && !validateNewPlayer(nameInput.value, players)) {
       players.push(normalizeName(nameInput.value));
     }
-    const game = createGame(players, limit);
+    const game = createGame(players, { ...rules, [MODES[rules.mode].key]: value });
     saveWarning(upsertGame(game));
     navigate(`#/game/${encodeURIComponent(game.id)}`);
   });
 
   renderList();
+  renderRules();
 }

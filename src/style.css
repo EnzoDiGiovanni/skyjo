@@ -512,11 +512,76 @@ input {
   outline-offset: 2px;
 }
 
+.segmented-mode {
+  margin-top: 10px;
+}
+
+.segmented-mode .segment span {
+  font-size: 1.1rem;
+}
+
+.custom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.custom[hidden] {
+  display: none;
+}
+
+.field-num {
+  flex: none;
+  width: 9rem;
+  text-align: center;
+  font: 600 1.4rem var(--display);
+}
+
+.custom-unit {
+  font: 600 1.2rem var(--display);
+}
+
 .bottom-bar {
   position: sticky;
   bottom: 0;
   padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
   margin-top: 12px;
+}
+
+/* ---------- Partie : avancement (mode « en manches ») ---------- */
+
+.progress {
+  display: flex;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 20px;
+}
+
+.progress li {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border-radius: 7px;
+  font: 600 0.85rem var(--display);
+  color: var(--on-sea-soft);
+  background: rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
+}
+
+.progress li.is-done {
+  background: var(--sun);
+  color: #4a3204;
+  box-shadow: none;
+}
+
+.progress li.is-active {
+  background: var(--card);
+  color: var(--pip);
+  box-shadow: 0 0 0 2px var(--sun);
+  transform: translateY(-3px);
 }
 
 /* ---------- Partie : manche ---------- */

@@ -3,14 +3,17 @@
 Feuille de score minimaliste pour une partie de **Skyjo** jouée autour d'une table.
 Aucun compte, aucun serveur : tout est stocké dans le `localStorage` du navigateur.
 
-- 2 à 8 joueurs, fin de partie réglable (50 / 100 / 150 / 200, 100 par défaut)
+- 2 à 8 joueurs, deux façons de finir la partie, au choix à la création :
+  - **aux points** : dès qu'un joueur atteint le total (50 / 100 / 150 ou valeur libre, 100 par défaut)
+  - **en manches** : comme sur le carnet, après la dernière manche (5 / 10 / 15 ou valeur libre, 10 par défaut),
+    avec une barre d'avancement des manches
 - Saisie une manche à la fois : un gros champ par joueur, bouton ± pour les scores négatifs
 - Bouton « A fini » pour le joueur qui a retourné toutes ses cartes en premier :
   s'il n'a pas **strictement** le plus petit score (égalité comprise), ses points positifs sont doublés
 - Indique qui commence la manche suivante (celui qui a fini la précédente)
 - Jauge par joueur vers la limite, meneur mis en évidence (score le plus bas)
 - Feuille de score complète en dessous ; toucher une ligne pour corriger une manche
-- La partie s'arrête dès qu'un joueur atteint la limite ; classement final avec ex æquo
+- Classement final avec ex æquo, perdant indiqué (total le plus haut)
 - Sauvegarde automatique, mobile d'abord, mode sombre automatique
 - Polices Fredoka et Nunito intégrées au build (aucune requête externe)
 
@@ -34,7 +37,7 @@ src/
   storage.ts         lecture/écriture localStorage + migration de schéma
   ui.ts              petits utilitaires DOM
   views/home.ts      accueil : liste des parties
-  views/setup.ts     création de partie (joueurs + limite)
+  views/setup.ts     création de partie (joueurs + fin de partie)
   views/scoresheet.ts feuille de score + classement final
   style.css
 tests/game.test.ts

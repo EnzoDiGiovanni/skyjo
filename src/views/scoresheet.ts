@@ -6,6 +6,7 @@ import {
   isRoundComplete,
   isRoundEmpty,
   leaders,
+  losers,
   missingPlayers,
   overLimit,
   parseScore,
@@ -64,6 +65,32 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
 
   // ---------- Gabarits ----------
 
+  const byPoints = game.mode === 'points';
+  // Au-delà, les cases de la barre d'avancement deviendraient trop petites.
+  const showProgress = !byPoints && game.maxRounds <= 20;
+
+  /** Joueurs à mettre en rouge : au-delà de la limite, ou derniers d'une partie en manches finie. */
+  function badPlayers(): Set<number> {
+    return new Set(byPoints ? overLimit(game) : game.finished ? losers(game) : []);
+  }
+
+  function progressHtml(active: number): string {
+    if (!showProgress) return '';
+    return `<ol class="progress" aria-label="Avancement de la partie">${Array.from(
+      { length: game.maxRounds },
+      (_, r) => {
+        const done = r < game.rounds.length && isRoundComplete(game.rounds[r]);
+        const cls = `${r === active ? 'is-active' : ''} ${done ? 'is-done' : ''}`;
+        return `<li class="${cls}" aria-label="Manche ${r + 1}${done ? ', jouée' : ''}">${r + 1}</li>`;
+      },
+    ).join('')}</ol>`;
+  }
+
+  function roundSubtitle(r: number): string {
+    if (byPoints) return `Partie en ${game.limit} points`;
+    return r === game.maxRounds - 1 ? `Dernière manche sur ${game.maxRounds} !` : `sur ${game.maxRounds}`;
+  }
+
   function gaugeWidth(total: number): string {
     return `${Math.max(0, Math.min(1, total / game.limit)) * 100}%`;
   }
@@ -86,8 +113,12 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
         <li class="entry ${isCloser ? 'is-closer' : ''}" data-entry="${i}">
           <label class="entry-who" for="score-${i}">
             <span class="entry-name">${esc(p)}</span>
-            <span class="entry-total">Total : <b data-total="${i}">${fmt(t[i])}</b> / ${game.limit}</span>
-            <span class="gauge" aria-hidden="true"><span data-gauge="${i}" class="${t[i] >= game.limit * 0.75 ? 'is-hot' : ''}" style="width:${gaugeWidth(t[i])}"></span></span>
+            <span class="entry-total">Total : <b data-total="${i}">${fmt(t[i])}</b>${byPoints ? ` / ${game.limit}` : ''}</span>
+            ${
+              byPoints
+                ? `<span class="gauge" aria-hidden="true"><span data-gauge="${i}" class="${t[i] >= game.limit * 0.75 ? 'is-hot' : ''}" style="width:${gaugeWidth(t[i])}"></span></span>`
+                : ''
+            }
           </label>
           <div class="entry-tools">
             <button type="button" class="btn-closer" data-closer="${i}" aria-pressed="${isCloser}">A fini</button>
@@ -104,6 +135,7 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
       .join('');
 
     return `
+      ${progressHtml(r)}
       <section class="round" aria-labelledby="round-title">
         <div class="round-head">
           <div class="round-card ${dealAnimation ? 'is-dealt' : ''}" aria-hidden="true">
@@ -113,7 +145,7 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
           </div>
           <div class="round-text">
             <h1 id="round-title">Manche ${r + 1}</h1>
-            <p>Partie en ${game.limit} points</p>
+            <p>${roundSubtitle(r)}</p>
             <p class="starter-line">${
               starter === null
                 ? 'Chacun retourne 2 cartes : la plus grosse somme commence.'
@@ -137,10 +169,20 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
   function endHtml(): string {
     const w = winners(game);
     const over = overLimit(game).map((i) => game.players[i]);
+    const lost = losers(game).map((i) => game.players[i]);
+    const bad = badPlayers();
+    const played = game.rounds.length;
+    const how = byPoints
+      ? `${esc(listNames(over))} ${over.length > 1 ? 'ont' : 'a'} atteint ${game.limit} points en ${played} manche${played > 1 ? 's' : ''}.`
+      : `Les ${played} manche${played > 1 ? 's sont jouées' : ' est jouée'}.`;
+    const loserLine =
+      lost.length && lost.length < game.players.length
+        ? ` ${esc(listNames(lost))} ${lost.length > 1 ? 'perdent' : 'perd'} avec ${fmt(totals(game)[losers(game)[0]])} points.`
+        : '';
     const rows = ranking(game)
       .map(
         (e) => `
-        <li class="rank-row ${e.rank === 1 ? 'is-winner' : ''} ${e.total >= game.limit ? 'is-over' : ''}">
+        <li class="rank-row ${e.rank === 1 ? 'is-winner' : ''} ${bad.has(e.index) ? 'is-over' : ''}">
           <span class="rank-pos">${e.rank === 1 ? '★' : e.rank}</span>
           <span class="rank-name">${esc(e.player)}</span>
           <span class="rank-total">${fmt(e.total)} pts</span>
@@ -148,12 +190,13 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
       )
       .join('');
     return `
+      ${progressHtml(-1)}
       <section class="end">
         <div class="brand-cards" aria-hidden="true">
           <span class="v-neg">−2</span><span class="v-zero">0</span><span class="v-high">12</span>
         </div>
         <h1>${w.length > 1 ? `Égalité entre ${esc(listNames(w))} !` : `Bravo ${esc(w[0])} !`}</h1>
-        <p class="end-sub">${esc(listNames(over))} ${over.length > 1 ? 'ont' : 'a'} atteint ${game.limit} points en ${game.rounds.length} manche${game.rounds.length > 1 ? 's' : ''}. Le plus petit score gagne.</p>
+        <p class="end-sub">${how}${loserLine} Le plus petit score gagne.</p>
         <ol class="paper ranking">${rows}</ol>
         <button type="button" class="btn btn-sun btn-big" id="replay">Rejouer avec les mêmes joueurs</button>
         <a class="btn btn-quiet" href="#/">Retour à l'accueil</a>
@@ -162,6 +205,7 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
 
   function tableHtml(active: number): string {
     const lead = new Set(leaders(game));
+    const bad = badPlayers();
     const t = totals(game);
     const head = game.players
       .map((p, i) => `<th scope="col" class="${lead.has(i) ? 'is-leader' : ''}"><span>${esc(p)}</span></th>`)
@@ -195,7 +239,7 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
         <tfoot><tr><th scope="row">Total</th>${t
           .map(
             (v, i) =>
-              `<td class="${lead.has(i) ? 'is-leader' : ''} ${v >= game.limit ? 'is-over' : ''}">${fmt(v)}</td>`,
+              `<td class="${lead.has(i) ? 'is-leader' : ''} ${bad.has(i) ? 'is-over' : ''}">${fmt(v)}</td>`,
           )
           .join('')}</tr></tfoot>
       </table>`;
@@ -247,6 +291,9 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
         el.hidden = !text;
       });
     }
+    root.querySelectorAll<HTMLElement>('.progress li').forEach((el, k) => {
+      el.classList.toggle('is-done', k < game.rounds.length && isRoundComplete(game.rounds[k]));
+    });
     root.querySelector('#table-wrap')!.innerHTML = tableHtml(r);
     bindTable();
     updateValidate();
@@ -357,7 +404,11 @@ export function renderScoresheet(root: HTMLElement, id: string): void {
     });
 
     root.querySelector('#replay')?.addEventListener('click', () => {
-      const next = createGame(game.players, game.limit);
+      const next = createGame(game.players, {
+        mode: game.mode,
+        limit: game.limit,
+        maxRounds: game.maxRounds,
+      });
       saveWarning(upsertGame(next));
       navigate(`#/game/${encodeURIComponent(next.id)}`);
     });

@@ -4,6 +4,8 @@ import {
   currentRoundIndex,
   isDoubled,
   leaders,
+  losers,
+  parseRuleValue,
   missingPlayers,
   parseScore,
   ranking,
@@ -55,7 +57,7 @@ describe('doublement', () => {
 
 describe('déroulé de partie', () => {
   it('une nouvelle manche apparaît quand la précédente est complète', () => {
-    let g = createGame(['A', 'B'], 100, 'test');
+    let g = createGame(['A', 'B'], {}, 'test');
     expect(g.rounds).toHaveLength(1);
     g = play(g, [10, 20], 0);
     expect(g.rounds).toHaveLength(2);
@@ -65,20 +67,20 @@ describe('déroulé de partie', () => {
   });
 
   it('effacer un score retire la manche suivante encore vide', () => {
-    let g = play(createGame(['A', 'B'], 100, 'test'), [10, 20], 0);
+    let g = play(createGame(['A', 'B'], {}, 'test'), [10, 20], 0);
     g = setScore(g, 0, 1, null);
     expect(g.rounds).toHaveLength(1);
     expect(missingPlayers(g.rounds[0])).toEqual([1]);
   });
 
   it('celui qui a fini commence la manche suivante', () => {
-    let g = play(createGame(['A', 'B', 'C'], 100, 'test'), [5, 2, 9], 1);
+    let g = play(createGame(['A', 'B', 'C'], {}, 'test'), [5, 2, 9], 1);
     expect(starterIndex(g, 0)).toBeNull();
     expect(starterIndex(g, 1)).toBe(1);
   });
 
   it('la partie s’arrête dès qu’un joueur atteint la limite', () => {
-    let g = createGame(['A', 'B'], 50, 'test');
+    let g = createGame(['A', 'B'], { limit: 50 }, 'test');
     g = play(g, [20, 30], 0);
     g = play(g, [10, 20], 0);
     expect(totals(g)).toEqual([30, 50]);
@@ -89,14 +91,14 @@ describe('déroulé de partie', () => {
   });
 
   it('le doublement peut faire franchir la limite', () => {
-    let g = createGame(['A', 'B'], 50, 'test');
+    let g = createGame(['A', 'B'], { limit: 50 }, 'test');
     g = play(g, [30, 10], 0); // 30 doublé → 60
     expect(totals(g)).toEqual([60, 10]);
     expect(g.finished).toBe(true);
   });
 
   it('corriger une manche peut relancer une partie terminée', () => {
-    let g = createGame(['A', 'B'], 50, 'test');
+    let g = createGame(['A', 'B'], { limit: 50 }, 'test');
     g = play(g, [20, 30], 0);
     g = play(g, [10, 20], 0);
     g = setScore(g, 1, 1, 5);
@@ -105,7 +107,7 @@ describe('déroulé de partie', () => {
   });
 
   it('corriger une manche peut terminer la partie et retire la manche vide', () => {
-    let g = createGame(['A', 'B'], 50, 'test');
+    let g = createGame(['A', 'B'], { limit: 50 }, 'test');
     g = play(g, [20, 30], 0);
     g = play(g, [10, 5], 1);
     expect(totals(g)).toEqual([30, 35]);
@@ -116,9 +118,49 @@ describe('déroulé de partie', () => {
   });
 });
 
+describe('partie en nombre de manches', () => {
+  const rounds = (n: number) => createGame(['A', 'B'], { mode: 'rounds', maxRounds: n }, 'test');
+
+  it('s’arrête après la dernière manche, même sous 100 points', () => {
+    let g = rounds(3);
+    g = play(g, [5, 8], 0);
+    g = play(g, [6, 2], 1);
+    expect(g.finished).toBe(false);
+    expect(g.rounds).toHaveLength(3);
+    g = play(g, [1, 9], 0);
+    expect(g.finished).toBe(true);
+    expect(g.rounds).toHaveLength(3);
+    expect(winners(g)).toEqual(['A']);
+    expect(losers(g)).toEqual([1]);
+  });
+
+  it('ignore la limite de points', () => {
+    let g = rounds(2);
+    g = play(g, [150, 10], 1);
+    expect(g.finished).toBe(false);
+  });
+
+  it('corriger une manche d’une partie finie ne rajoute pas de manche', () => {
+    let g = rounds(1);
+    g = play(g, [5, 8], 0);
+    g = setScore(g, 0, 1, 2);
+    expect(g.finished).toBe(true);
+    expect(g.rounds).toHaveLength(1);
+  });
+});
+
+describe('parseRuleValue', () => {
+  it('accepte un entier dans les bornes', () => {
+    expect(parseRuleValue('120', { min: 10, max: 999 })).toBe(120);
+    expect(parseRuleValue('5', { min: 10, max: 999 })).toBeNull();
+    expect(parseRuleValue('', { min: 1, max: 50 })).toBeNull();
+    expect(parseRuleValue('12a', { min: 1, max: 50 })).toBeNull();
+  });
+});
+
 describe('classement', () => {
   it('le plus petit total gagne, ex æquo au même rang', () => {
-    let g = createGame(['A', 'B', 'C'], 100, 'test');
+    let g = createGame(['A', 'B', 'C'], {}, 'test');
     g = play(g, [-4, 8, -4], 0);
     expect(leaders(g)).toEqual([0, 2]);
     expect(ranking(g).map((e) => e.rank)).toEqual([1, 1, 3]);

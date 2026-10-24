@@ -1,4 +1,4 @@
-import { DEFAULT_LIMIT, type Game, type Round } from './game';
+import { DEFAULT_RULES, type Game, type Round } from './game';
 
 const GAMES_KEY = 'skyjo:games';
 const VERSION_KEY = 'skyjo:version';
@@ -51,7 +51,10 @@ function migrate(data: unknown, _fromVersion: number): Game[] {
   if (!Array.isArray(data)) return [];
   return data.filter(isGame).map((g) => ({
     ...g,
-    limit: typeof g.limit === 'number' && g.limit > 0 ? g.limit : DEFAULT_LIMIT,
+    mode: g.mode === 'rounds' ? 'rounds' : 'points',
+    limit: typeof g.limit === 'number' && g.limit > 0 ? g.limit : DEFAULT_RULES.limit,
+    maxRounds:
+      typeof g.maxRounds === 'number' && g.maxRounds > 0 ? g.maxRounds : DEFAULT_RULES.maxRounds,
     finished: Boolean(g.finished),
   }));
 }

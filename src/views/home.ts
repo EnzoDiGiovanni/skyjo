@@ -5,7 +5,9 @@ import { esc, formatDate, navigate } from '../ui';
 function gameStatus(g: Game): string {
   return g.finished
     ? `Gagnant : ${esc(winners(g).join(' et '))}`
-    : `En cours : manche ${currentRoundIndex(g) + 1} · partie en ${g.limit} points`;
+    : g.mode === 'rounds'
+      ? `En cours : manche ${currentRoundIndex(g) + 1} sur ${g.maxRounds}`
+      : `En cours : manche ${currentRoundIndex(g) + 1} · partie en ${g.limit} points`;
 }
 
 export function renderHome(root: HTMLElement): void {

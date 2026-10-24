@@ -8,19 +8,31 @@ export type Round = {
   closer: number | null; // index du joueur qui a fini la manche
 };
 
-export type Game = {
+/** Fin de partie : dès qu'un joueur atteint un total, ou après un nombre fixe de manches. */
+export type EndMode = 'points' | 'rounds';
+
+export type Rules = {
+  mode: EndMode;
+  limit: number; // mode « points » : la partie s'arrête quand un joueur atteint ou dépasse ce total
+  maxRounds: number; // mode « rounds » : la partie s'arrête après ce nombre de manches
+};
+
+export type Game = Rules & {
   id: string;
   createdAt: string;
   players: string[];
-  limit: number; // la partie s'arrête quand un joueur atteint ou dépasse ce total
   rounds: Round[]; // la dernière manche est celle en cours (sauf partie terminée)
   finished: boolean;
 };
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
-export const DEFAULT_LIMIT = 100;
-export const LIMITS = [50, 100, 150, 200];
+export const DEFAULT_RULES: Rules = { mode: 'points', limit: 100, maxRounds: 10 };
+/** Choix rapides proposés à la création (une valeur libre reste possible). */
+export const LIMITS = [50, 100, 150];
+export const ROUND_COUNTS = [5, 10, 15];
+export const LIMIT_RANGE = { min: 10, max: 999 };
+export const ROUNDS_RANGE = { min: 1, max: 50 };
 
 /** Bornes raisonnables d'une manche : 12 cartes de −2 à 12. */
 const MIN_SCORE = -99;
@@ -32,14 +44,15 @@ export function emptyRound(playerCount: number): Round {
 
 export function createGame(
   players: string[],
-  limit: number = DEFAULT_LIMIT,
+  rules: Partial<Rules> = {},
   id: string = newId(),
 ): Game {
   return {
+    ...DEFAULT_RULES,
+    ...rules,
     id,
     createdAt: new Date().toISOString(),
     players: [...players],
-    limit,
     rounds: [emptyRound(players.length)],
     finished: false,
   };
@@ -74,6 +87,14 @@ export function parseScore(raw: string): Score {
   if (!/^-?\d+$/.test(s)) return null;
   const n = Number(s);
   return n >= MIN_SCORE && n <= MAX_SCORE ? n : null;
+}
+
+/** Parse une valeur de règle saisie à la main : entier dans [min, max], sinon null. */
+export function parseRuleValue(raw: string, range: { min: number; max: number }): number | null {
+  const s = raw.trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return n >= range.min && n <= range.max ? n : null;
 }
 
 export function isRoundComplete(round: Round): boolean {
@@ -135,14 +156,16 @@ export function hasAnyScore(game: Game): boolean {
   return game.rounds.some((r) => r.scores.some((s) => s !== null));
 }
 
-function reachedLimit(rounds: Round[], game: Game): boolean {
+/** La fin de partie est-elle atteinte avec ces manches (supposées complètes) ? */
+function endReached(rounds: Round[], game: Game): boolean {
+  if (game.mode === 'rounds') return rounds.length >= game.maxRounds;
   return Math.max(...sumRounds(rounds, game.players.length)) >= game.limit;
 }
 
 /**
  * Remet la partie d'aplomb après une saisie :
- * - retire une manche vide en trop (manche précédente redevenue incomplète, ou limite atteinte) ;
- * - ajoute la manche suivante quand tout est saisi et que personne n'a atteint la limite ;
+ * - retire une manche vide en trop (manche précédente redevenue incomplète, ou fin atteinte) ;
+ * - ajoute la manche suivante quand tout est saisi et que la fin n'est pas atteinte ;
  * - recalcule « terminée ».
  */
 export function normalize(game: Game): Game {
@@ -150,11 +173,11 @@ export function normalize(game: Game): Game {
   while (rounds.length > 1 && isRoundEmpty(rounds[rounds.length - 1])) {
     const before = rounds.slice(0, -1);
     const prev = before[before.length - 1];
-    if (isRoundComplete(prev) && !reachedLimit(before, game)) break;
+    if (isRoundComplete(prev) && !endReached(before, game)) break;
     rounds.pop();
   }
   const allDone = rounds.every(isRoundComplete);
-  const reached = reachedLimit(rounds, game);
+  const reached = endReached(rounds, game);
   if (allDone && !reached) rounds.push(emptyRound(game.players.length));
   return { ...game, rounds, finished: allDone && reached };
 }
@@ -200,7 +223,16 @@ export function winners(game: Game): string[] {
   return ranking(game).filter((e) => e.rank === 1).map((e) => e.player);
 }
 
-/** Joueurs qui ont atteint ou dépassé la limite. */
+/** Joueurs qui ont atteint ou dépassé la limite (mode « points » uniquement). */
 export function overLimit(game: Game): number[] {
+  if (game.mode !== 'points') return [];
   return totals(game).flatMap((v, i) => (v >= game.limit ? [i] : []));
+}
+
+/** Indices des joueurs au total le plus haut (vide si aucun score saisi). */
+export function losers(game: Game): number[] {
+  if (!hasAnyScore(game)) return [];
+  const t = totals(game);
+  const max = Math.max(...t);
+  return t.flatMap((v, i) => (v === max ? [i] : []));
 }
